@@ -1,6 +1,9 @@
 package com.project.back_end.repo;
 
-public interface AppointmentRepository  {
+import com.project.back_end.models.Appointment;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface AppointmentRepository extends JpaRepository<Appointment,String> {
 
    // 1. Extend JpaRepository:
 //    - The repository extends JpaRepository<Appointment, Long>, which gives it basic CRUD functionality.

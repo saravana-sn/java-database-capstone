@@ -1,5 +1,21 @@
 package com.project.back_end.services;
 
+import com.project.back_end.repo.AdminRepository;
+import com.project.back_end.repo.DoctorRepository;
+import com.project.back_end.repo.PatientRepository;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.SignatureAlgorithm;
+import io.jsonwebtoken.security.Keys;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
+import javax.crypto.SecretKey;
+import java.nio.charset.StandardCharsets;
+import java.util.Date;
+
+@Component
 public class TokenService {
 // 1. **@Component Annotation**
 // The @Component annotation marks this class as a Spring component, meaning Spring will manage it as a bean within its application context.
@@ -9,11 +25,68 @@ public class TokenService {
 // The constructor injects dependencies for `AdminRepository`, `DoctorRepository`, and `PatientRepository`,
 // allowing the service to interact with the database and validate users based on their role (admin, doctor, or patient).
 // Constructor injection ensures that the class is initialized with all required dependencies, promoting immutability and making the class testable.
+    private AdminRepository adminRepository;
+    private PatientRepository patientRepository;
+    private DoctorRepository doctorRepository;
+    @Autowired
+    public TokenService(AdminRepository adminRepository, PatientRepository patientRepository, DoctorRepository doctorRepository) {
+        this.adminRepository = adminRepository;
+        this.patientRepository = patientRepository;
+        this.doctorRepository = doctorRepository;
+    }
 
 // 3. **getSigningKey Method**
 // This method retrieves the HMAC SHA key used to sign JWT tokens.
 // It uses the `jwt.secret` value, which is provided from an external source (like application properties).
 // The `Keys.hmacShaKeyFor()` method converts the secret key string into a valid `SecretKey` for signing and verification of JWTs.
+    @Value("${jwt.secret}")
+    private String secretKey;
+    // 3. getSigningKey Method
+    private SecretKey getSigningKey() {
+        byte[] keyBytes = secretKey.getBytes(StandardCharsets.UTF_8);
+        return Keys.hmacShaKeyFor(keyBytes);
+    }
+
+    // 4. generateToken Method
+    public String generateToken(String email) {
+        long now = System.currentTimeMillis();
+        long expirationTime = now + (7L * 24 * 60 * 60 * 1000); // 7 days in milliseconds
+
+        return Jwts.builder()
+                .setSubject(email)
+                .setIssuedAt(new Date(now))
+                .setExpiration(new Date(expirationTime))
+                .signWith(getSigningKey(), SignatureAlgorithm.HS256)
+                .compact();
+    }
+
+    // 5. extractEmail Method
+    public String extractEmail(String token) {
+        Claims claims = Jwts.parser()             // Changed from parserBuilder()
+                .verifyWith(getSigningKey())     // Changed from setSigningKey()
+                .build()
+                .parseSignedClaims(token)        // Changed from parseClaimsJws()
+                .getPayload();                   // Changed from getBody()
+        return claims.getSubject();
+    }
+
+    // 6. validateToken Method
+    public boolean validateToken(String token, String role) {
+        try {
+            String email = extractEmail(token);
+
+            // Check existence based on role
+            return switch (role.toLowerCase()) {
+                case "admin" -> adminRepository.existsByEmail(email);
+                case "doctor" -> doctorRepository.existsByEmail(email);
+                case "patient", "loggedpatient" -> patientRepository.existsByEmail(email);
+                default -> false;
+            };
+        } catch (Exception e) {
+            // Returns false if token is expired, tampered with, or user doesn't exist
+            return false;
+        }
+    }
 
 // 4. **generateToken Method**
 // This method generates a JWT token for a user based on their email.
